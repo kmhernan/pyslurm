@@ -16,6 +16,7 @@ __version__ = "17.02.0"
 sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
 from .pyslurm import *
+from .gdcslurm import *
 
 def version():
     return __version__

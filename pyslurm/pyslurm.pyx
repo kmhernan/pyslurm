@@ -4833,7 +4833,6 @@ cdef class qos:
 
         self._QOSDict = Q_dict
 
-
 #
 # Helper functions to convert numerical States
 #

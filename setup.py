@@ -64,7 +64,7 @@ def makeExtension(extName):
     extPath = extName.replace(".", os.path.sep) + ".pyx"
     return Extension(
         extName,
-        [extPath],
+        [extPath, 'pyslurm/aggregate.c'] if extName == 'pyslurm.gdcslurm' else [extPath],
         include_dirs = ['%s' % SLURM_INC, '.'],   # adding the '.' to include_dirs is CRUCIAL!!
         library_dirs = ['%s' % SLURM_LIB, '%s/slurm' % SLURM_LIB],
         libraries = ['slurmdb', 'slurm'],
@@ -117,7 +117,9 @@ def clean():
             fatal("Clean - failed to remove pyslurm build/ directory !")
             sys.exit(-1)
 
-    files = ["pyslurm/__init__.pyc", "pyslurm/pyslurm.c", "pyslurm/bluegene.pxi", "pyslurm/pyslurm.so", "pyslurm/slurm_version.pxi" ]
+    files = ["pyslurm/__init__.pyc", "pyslurm/pyslurm.c", 
+             "pyslurm/bluegene.pxi", "pyslurm/pyslurm.so", 
+             "pyslurm/slurm_version.pxi", "pyslurm/gdcslurm.c"]
 
     for file in files:
 
@@ -299,6 +301,18 @@ if args[1] == 'build' or args[1] == 'build_ext':
 extNames = scandir("pyslurm/")
 
 # Build up the set of Extension objects
+
+#aggExt = Extension(
+#    'pyslurm.aggregate',
+#    ['pyslurm/aggregate.c'],
+#    include_dirs = ['%s' % SLURM_INC, '.'],   # adding the '.' to include_dirs is CRUCIAL!!
+#    library_dirs = ['%s' % SLURM_LIB, '%s/slurm' % SLURM_LIB],
+#    libraries = ['slurmdb', 'slurm'],
+#    runtime_library_dirs = ['%s/' % SLURM_LIB, '%s/slurm' % SLURM_LIB],
+#    extra_objects = [],
+#    extra_compile_args = [],
+#    extra_link_args = [],
+#)
 
 extensions = [makeExtension(name) for name in extNames]
 

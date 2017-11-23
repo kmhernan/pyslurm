@@ -1474,10 +1474,6 @@ cdef extern from 'slurm/slurm.h' nogil:
 
     ctypedef submit_response_msg submit_response_msg_t
 
-    ctypedef struct slurmdb_selected_step_t: 
-        uint32_t array_task_id
-        uint32_t jobid
-        uint32_t stepid
 
     ctypedef struct job_step_info_t:
         uint32_t array_job_id
@@ -2202,6 +2198,14 @@ cdef extern from 'slurm/slurm.h' nogil:
 
 cdef extern from 'slurm/slurmdb.h' nogil:
 
+    ctypedef struct slurmdb_tres_rec_t:
+        uint64_t alloc_secs
+        uint32_t rec_count
+        uint64_t count
+        uint32_t id
+        char *name
+        char *type
+
     ctypedef struct slurmdb_qos_usage_t:
         List job_list
         uint32_t grp_used_jobs
@@ -2264,7 +2268,7 @@ cdef extern from 'slurm/slurmdb.h' nogil:
 
     ctypedef slurmdb_qos_cond slurmdb_qos_cond_t
 
-    ctypedef struct slurmdb_job_cond:
+    ctypedef struct slurmdb_job_cond_t:
         List acct_list
         List associd_list
         List cluster_list
@@ -2292,9 +2296,9 @@ cdef extern from 'slurm/slurmdb.h' nogil:
         uint16_t without_steps
         uint16_t without_usage_truncation
 
-    ctypedef slurmdb_job_cond slurmdb_job_cond_t
+    #ctypedef slurmdb_job_cond slurmdb_job_cond_t
 
-    ctypedef struct slurmdb_stats:
+    ctypedef struct slurmdb_stats_t:
         double act_cpufreq
         double cpu_ave
         double consumed_energy
@@ -2322,9 +2326,7 @@ cdef extern from 'slurm/slurmdb.h' nogil:
         uint32_t vsize_max_nodeid
         uint32_t vsize_max_taskid
 
-    ctypedef slurmdb_stats slurmdb_stats_t
-
-    ctypedef struct slurmdb_job_rec:
+    ctypedef struct slurmdb_job_rec_t:
         char    *account
         char    *admin_comment
         char    *alloc_gres
@@ -2380,9 +2382,9 @@ cdef extern from 'slurm/slurmdb.h' nogil:
         char    *wckey
         uint32_t wckeyid
 
-    ctypedef slurmdb_job_rec slurmdb_job_rec_t
+    #ctypedef slurmdb_job_rec slurmdb_job_rec_t
 
-    ctypedef struct slurmdb_step_rec:
+    ctypedef struct slurmdb_step_rec_t:
         uint32_t elapsed
         time_t end
         int32_t exitcode
@@ -2412,7 +2414,12 @@ cdef extern from 'slurm/slurmdb.h' nogil:
         uint32_t user_cpu_sec
         uint32_t user_cpu_usec
 
-    ctypedef slurmdb_step_rec slurmdb_step_rec_t
+    #ctypedef slurmdb_step_rec slurmdb_step_rec_t
+
+    ctypedef struct slurmdb_selected_step_t: 
+        uint32_t array_task_id
+        uint32_t jobid
+        uint32_t stepid
 
     #
     # Accounting Storage
@@ -2470,4 +2477,5 @@ cdef extern void *slurm_xmalloc (size_t, const_char_ptr, int, const_char_ptr)
 cdef extern void slurm_free_stats_response_msg (stats_info_response_msg_t *msg)
 cdef extern char *slurm_step_layout_type_name (task_dist_states_t task_dist)
 
-cdef extern int slurm_addto_step_list(List, const_char_ptr) 
+cdef extern int slurm_addto_step_list(List, const_char_ptr)
+cdef extern void slurm_make_time_str (time_t *, char *, int)

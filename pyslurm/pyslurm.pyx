@@ -2468,6 +2468,9 @@ def slurm_pid2jobid(uint32_t JobPID=0):
     return errCode, JobID
 
 
+def convSecs2time_str(uint32_t time):
+    return secs2time_str(time)
+
 cdef secs2time_str(uint32_t time):
     u"""Convert seconds to Slurm string format.
 

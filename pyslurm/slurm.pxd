@@ -1971,6 +1971,7 @@ cdef extern from 'slurm/slurm.h' nogil:
     cdef extern int slurm_update_job (job_desc_msg_t *)
     cdef extern int slurm_update_job2 (job_desc_msg_t * job_msg,
                                        job_array_resp_msg_t **resp)
+
     cdef extern uint32_t slurm_xlate_job_id (char *job_id_str)
     cdef extern int slurm_top_job (char *job_id_str)
 
@@ -2018,9 +2019,12 @@ cdef extern from 'slurm/slurm.h' nogil:
     cdef extern int slurm_terminate_job_step (uint32_t, uint32_t)
 
     #
-    # Job Suspend/Resume/Requeue
+    # Job Submit/Suspend/Resume/Requeue
     #
-
+    cdef extern int slurm_submit_batch_job( job_desc_msg_t *,
+                                            submit_response_msg_t **)
+    cdef extern void slurm_free_submit_response_response_msg( submit_response_msg_t * )
+    cdef extern void slurm_init_job_desc_msg( job_desc_msg_t *)
     cdef extern int slurm_suspend (uint32_t)
     cdef extern int slurm_suspend2 (char *job_id, job_array_resp_msg_t **resp)
     cdef extern int slurm_resume (uint32_t)
@@ -2445,6 +2449,7 @@ cdef extern from 'slurm/slurmdb.h' nogil:
     #
     cdef extern List slurmdb_jobs_get(void *db_conn, slurmdb_job_cond_t *job_cond)
     cdef extern void slurmdb_destroy_selected_step(void *object)
+    cdef extern void slurmdb_destroy_job_cond(void *object)
 
 #
 # Slurm declarations not in slurm.h

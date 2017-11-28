@@ -2,12 +2,15 @@
 # cython: profile=False
 import time as p_time
 import os
+import sys
+from socket import gethostname
 from pyslurm import convSecs2time_str, get_job_state
 
 from libc.string cimport strlen, strcpy
 from libc.stdint cimport uint8_t, uint16_t, uint32_t
 from libc.stdint cimport int64_t, uint64_t
 from libc.stdlib cimport malloc, free
+from posix.unistd cimport getuid, getgid
 
 from cpython cimport bool
 cdef extern from 'stdlib.h':
@@ -30,6 +33,10 @@ cdef extern from "sys/wait.h" nogil:
     int WTERMSIG (int status)
     int WEXITSTATUS (int status)
 
+cdef extern from "<sys/resource.h>" nogil:
+    enum: PRIO_PROCESS
+    int getpriority(int, id_t)
+
 try:
     import __builtin__
 except ImportError:
@@ -40,9 +47,6 @@ cimport slurm
 cimport aggregate
 include "bluegene.pxi"
 include "slurm_defines.pxi"
-
-#cdef inline IS_JOB_COMPLETE(slurm.slurm_job_info_t _X):
-#    return (_X.job_state & JOB_STATE_BASE) == JOB_COMPLETE
 
 #
 # gdc account jobs
@@ -76,25 +80,30 @@ cdef class archive_job:
         cdef:
             slurm.slurmdb_job_cond_t *cond = <slurm.slurmdb_job_cond_t *>slurm.xmalloc(sizeof(slurm.slurmdb_job_cond_t))
             slurm.List JobList = NULL
-            char* jobid = jobidp
+            #char* jobid = jobidp
             int apiError = 0
             int numAdded = 0
             void* dbconn = slurm.slurmdb_connection_get()
 
-        cond.step_list = slurm.slurm_list_create(slurm.slurmdb_destroy_selected_step) 
-        numAdded = slurm.slurm_addto_step_list(cond.step_list, jobid)
+        if not cond.step_list:
+            cond.step_list = slurm.slurm_list_create(slurm.slurmdb_destroy_selected_step) 
+        numAdded = slurm.slurm_addto_step_list(cond.step_list, <char *>jobidp)
+        if not slurm.slurm_list_count(cond.step_list):
+            slurm.slurm_list_destroy(cond.step_list)
+            cond.step_list = NULL
+
         JobList = slurm.slurmdb_jobs_get(dbconn, cond)
         if JobList is NULL:
             apiError = slurm.slurm_get_errno()
             raise ValueError(slurm.stringOrNone(slurm.slurm_strerror(apiError), ''), apiError)
         else:
             self._JobList = JobList
-        #slurmdb_destroy_job_cond
-        #slurmdb_destroy_job_rec
+
+        #slurm.slurm_list_destroy(JobList)
+        #JobList = NULL
         slurm.slurmdb_connection_close(&dbconn)
-        slurm.slurmdb_destroy_selected_step(cond.step_list)
+        #slurm.slurmdb_destroy_selected_step(cond.step_list)
         slurm.slurmdb_destroy_job_cond(cond)
-        #slurm.xfree(cond)
         return 0
 
     def get(self, jobid):
@@ -102,16 +111,17 @@ cdef class archive_job:
         self.__get_record()
         return self._JobDictList
 
-    cpdef str __get_time_str(self, slurm.time_t timerec):
+    cpdef unicode __get_time_str(self, slurm.time_t timerec):
         cdef:
             int sz = 32
             char * tmp_str = <char *>slurm.xmalloc(<size_t>sz)
         slurm.slurm_make_time_str(&timerec, tmp_str, sz)
-        res = tmp_str.encode("UTF-8") 
+        #res = tmp_str.encode("UTF-8") 
+        res = slurm.stringOrNone(tmp_str, '')
         slurm.xfree(tmp_str)
-        return res 
+        return res
 
-    cdef __get_record(self):
+    cdef void __get_record(self):
         cdef:
             slurm.List job_list = NULL
             slurm.ListIterator jobIter = NULL
@@ -123,7 +133,7 @@ cdef class archive_job:
             int j = 0 
             int stepNum = 0
             list J_list = [] 
-           
+
         if self._JobList is not NULL:
             jobNum = slurm.slurm_list_count(self._JobList)
             jobIter = slurm.slurm_list_iterator_create(self._JobList)
@@ -159,7 +169,7 @@ cdef class archive_job:
                     JobData[u"jobname"]  = slurm.stringOrNone(job.jobname, '')
                     JobData[u"exitcode"] = '' if job.state < JOB_COMPLETE \
                         else slurm.int32orNone(job.exitcode)
-                            
+
                     #JobData[u"exitcode"] = slurm.int32orNone(job.exitcode)
                     JobData[u"state"]    = get_job_state(job.state)
 
@@ -172,17 +182,11 @@ cdef class archive_job:
                     #JobData[u"tres_req_str"]   = slurm.stringOrNone(job.tres_req_str, '')
 
                     # Time info
-                    #elapsed = convSecs2time_str(job.elapsed)
-                    #JobData[u"elapsed"] = elapsed 
-
-                    #JobData[u"submitted"] = self.__get_time_str(job.submit) 
-                    #JobData[u"start"]   = self.__get_time_str(job.start) 
+                    JobData[u"elapsed"]   = slurm.stringOrNone(convSecs2time_str(job.elapsed), '')
+                    JobData[u"submitted"] = self.__get_time_str(job.submit)
+                    JobData[u"start"]     = self.__get_time_str(job.start)
+                    JobData[u"end"]       = self.__get_time_str(job.end) 
                     
-                    #if tmp_str is not NULL:
-                    #    JobData[u"start"] = tmp_str
-                    #    slurm.xfree(tmp_str)
-                    #else:
-                    #    JobData[u"start"] = ""
                     #slurm.slurm_make_time_str(&job.end, tmp_str, sz)
                     #JobData[u"end"]       = tmp_str 
                     #JobData[u"tot_cpu_sec"]     = slurm.int32orNone(job.tot_cpu_sec)
@@ -206,6 +210,7 @@ cdef class archive_job:
 
             slurm.slurm_list_iterator_destroy(jobIter)
             slurm.slurm_list_destroy(self._JobList)
+            self._JobList = NULL
 
         self._JobDictList = J_list
 
@@ -247,6 +252,13 @@ cdef class BatchJob:
     #        self.job_desc_msg.pn_min_memory = <int64_t>requirements[u'mem']
     #    self.job_desc_msg.script = requirements[u'script']
 
+    cdef int envcount(self, char **env):
+        """Return the number of elements in the environment `env`."""
+        cdef int envc = 0
+        while (env[envc] != NULL):
+            envc += 1
+        return envc
+
     cpdef void __submit(self, dict requirements):
         cdef:
             slurm.job_desc_msg_t job_desc_msg
@@ -254,10 +266,42 @@ cdef class BatchJob:
             int ret = -1 
             int apiError = -1
 
+        errno = 0
+        retval = 0
+        retval = getpriority(PRIO_PROCESS, 0)
+        if retval == -1:
+            if errno:
+                raise ValueError("getpriority(PRIO_PROCESS): %m")
+        try:
+            os.environ["SLURM_PRIO_PROCESS"] = str(retval)
+        except:
+            raise ValueError("unable to set SLURM_PRIO_PROCESS in environment")
+
+        try:
+            os.environ["SLURM_SUBMIT_DIR"] = os.getcwd()
+        except:
+            raise ValueError("unable to set SLURM_SUBMIT_DIR in environment")
+
+        try:
+            os.environ["SLURM_SUBMIT_HOST"] = gethostname()
+        except:
+            raise ValueError("unable to set SLURM_SUBMIT_HOST in environment")
+
+        if not os.environ.get("SLURM_UMASK"):
+            mask = os.umask(0)
+            _ = os.umask(mask)
+            try:
+                os.environ["SLURM_UMASK"] = "0" + str((mask>>6)&07) + str((mask>>3)&07) + str(mask&07)
+            except:
+                raise ValueError("unable to set SLURM_UMASK in environment")
+
         # Initialize message
         slurm.slurm_init_job_desc_msg( &job_desc_msg )
 
         # Add requirements
+        if requirements.get("contiguous") == 1:
+            job_desc_msg.contiguous = 1
+        else: job_desc_msg.contiguous = 0
         if requirements.get('max_nodes'):
             job_desc_msg.max_nodes = requirements[u'max_nodes']
         if requirements.get('min_nodes'):
@@ -265,27 +309,67 @@ cdef class BatchJob:
         if requirements.get('name'):
             name = requirements[u'name'].encode("UTF-8", "replace")
             job_desc_msg.name = name 
-        #if requirements.get('work_dir'):
-        #    work_dir = requirements[u'work_dir'].encode("UTF-8", "replace")
-        #    job_desc_msg.work_dir = work_dir 
-        work_dir = os.cwd.encode("UTF-8", "replace")
-        job_desc_msg.work_dir = work_dir
+            os.environ["SLURM_JOB_NAME"] = name
+        else:
+            job_desc_msg.name = "sbatch"
+            os.environ["SLURM_JOB_NAME"] = "sbatch" 
+
+        if requirements.get("work_dir"):
+            workdir = requirements[u'work_dir'].encode("UTF-8", "replace")
+            job_desc_msg.work_dir = workdir 
+        else:
+            work_dir = os.getcwd().encode("UTF-8", "replace")
+            job_desc_msg.work_dir = work_dir
+
         if requirements.get('cpus_per_task'):
             job_desc_msg.cpus_per_task = requirements[u'cpus_per_task']
+            os.environ["SLURM_CPUS_PER_TASK"] = str(requirements[u'cpus_per_task'])
         if requirements.get('partition'):
             partition = requirements[u'partition'].encode("UTF-8", "replace")
             job_desc_msg.partition = partition 
         if requirements.get('mem'):
-            job_desc_msg.pn_min_memory = <int64_t>requirements[u'mem']
+            job_desc_msg.pn_min_memory = requirements[u'mem']
         if requirements.get('user_id'):
-            job_desc_msg.user_id = <uint32_t>requirements[u'user_id'] 
+            job_desc_msg.user_id = requirements[u'user_id'] 
+        else:
+            job_desc_msg.user_id = getuid()
+ 
         if requirements.get('group_id'):
-            job_desc_msg.group_id = <uint32_t>requirements[u'group_id'] 
+            job_desc_msg.group_id = requirements[u'group_id'] 
+        else:
+            job_desc_msg.group_id = getgid()
+ 
         if requirements.get('ntasks'):
-            job_desc_msg.num_tasks = <uint32_t>requirements[u'ntasks'] 
+            job_desc_msg.num_tasks = requirements[u'ntasks'] 
+            os.environ["SLURM_NPROCS"] = str(requirements[u'ntasks'])
+            os.environ["SLURM_NTASKS"] = str(requirements[u'ntasks'])
 
         script = requirements[u'script'].encode("UTF-8", "replace")
-        job_desc_msg.script = script 
+        job_desc_msg.script = script
+        job_desc_msg.immediate = 0
+        job_desc_msg.profile = ACCT_GATHER_PROFILE_NOT_SET
+        job_desc_msg.mem_bind_type = 0
+        job_desc_msg.task_dist = slurm.SLURM_DIST_UNKNOWN
+        job_desc_msg.mail_type = 0
+        job_desc_msg.begin_time = 0
+        job_desc_msg.deadline = 0
+        job_desc_msg.environment = NULL
+        job_desc_msg.std_in = "/dev/null"
+        job_desc_msg.ckpt_dir = slurm.slurm_get_checkpoint_dir()
+        job_desc_msg.ckpt_interval = <uint16_t>0
+
+        requirements[u"get_user_env_time"] = -1
+        if not requirements.get("export_env"):
+            slurm.slurm_env_array_merge(&job_desc_msg.environment, <char **>slurm.environ)
+
+        if requirements[u"get_user_env_time"] >= 0:
+            slurm.slurm_env_array_overwrite(&job_desc_msg.environment, "SLURM_GET_USER_ENV", "1")
+
+        job_desc_msg.env_size = self.envcount(job_desc_msg.environment)
+        #if slurm.slurm_job_will_run(&job_desc_msg) != slurm.SLURM_SUCCESS:
+        #    slurm.slurm_perror("allocation failure")
+        #    sys.exit(1)
+        #sys.exit(0)
 
         # Submit job 
         ret = slurm.slurm_submit_batch_job(&job_desc_msg, &slurm_alloc_msg)
@@ -294,7 +378,7 @@ cdef class BatchJob:
             raise ValueError(slurm.stringOrNone(slurm.slurm_strerror(apiError), ''), apiError)
         else:
             self.response_msg[u'job_id'] = slurm_alloc_msg.job_id
-            self.response_msg[u'step_id'] = slurm_alloc_msg.step_id
+            #self.response_msg[u'step_id'] = slurm_alloc_msg.step_id
             self.response_msg[u'error_code'] = slurm_alloc_msg.error_code
 
         slurm.slurm_free_submit_response_response_msg( slurm_alloc_msg )

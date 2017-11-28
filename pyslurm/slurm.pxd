@@ -29,6 +29,7 @@ cdef extern from 'time.h' nogil:
 
 cdef extern from *:
     ctypedef char* const_char_ptr "const char*"
+    ctypedef char** const_char_pptr "const char**"
 
 # ctypedef struct sockaddr_in slurm_addr_t
 
@@ -1868,6 +1869,10 @@ cdef extern from 'slurm/slurm.h' nogil:
     #
     # List
     #
+    #cdef extern void FREE_NULL_LIST(List _X)
+    #    while 0:
+    #        if (_X): slurm_list_destroy(_X)
+    #        _X = NULL
 
     cdef extern void *slurm_list_append (List l, void *x)
     cdef extern int slurm_list_count (List l)
@@ -1881,6 +1886,7 @@ cdef extern from 'slurm/slurm.h' nogil:
     cdef extern void *slurm_list_next (ListIterator i)
     cdef extern void slurm_list_sort (List l, ListCmpF f)
     cdef extern void *slurm_list_pop (List l)
+
 
     #
     # Control Config Read/Print/Update
@@ -2025,6 +2031,7 @@ cdef extern from 'slurm/slurm.h' nogil:
                                             submit_response_msg_t **)
     cdef extern void slurm_free_submit_response_response_msg( submit_response_msg_t * )
     cdef extern void slurm_init_job_desc_msg( job_desc_msg_t *)
+    cdef extern int slurm_job_will_run(job_desc_msg_t *)
     cdef extern int slurm_suspend (uint32_t)
     cdef extern int slurm_suspend2 (char *job_id, job_array_resp_msg_t **resp)
     cdef extern int slurm_resume (uint32_t)
@@ -2482,5 +2489,12 @@ cdef extern void *slurm_xmalloc (size_t, const_char_ptr, int, const_char_ptr)
 cdef extern void slurm_free_stats_response_msg (stats_info_response_msg_t *msg)
 cdef extern char *slurm_step_layout_type_name (task_dist_states_t task_dist)
 
+cdef extern char **environ
+cdef extern char **slurm_env_array_create()
+cdef extern void slurm_env_array_merge(char ***dest_array, const_char_pptr src_array)
+cdef extern int slurm_env_array_overwrite(char ***array_ptr, const_char_ptr name, const_char_ptr value)
+cdef extern int slurm_env_array_overwrite_fmt(char ***array_ptr, const_char_ptr name, const_char_ptr value_fmt, ...)
+
 cdef extern int slurm_addto_step_list(List, const_char_ptr)
 cdef extern void slurm_make_time_str (time_t *, char *, int)
+cdef extern char *slurm_get_checkpoint_dir()

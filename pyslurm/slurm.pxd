@@ -132,6 +132,13 @@ cdef extern from 'slurm/slurm.h' nogil:
     uint32_t NO_VAL
     uint64_t NO_VAL64
 
+    enum:
+        KILL_JOB_BATCH
+        KILL_JOB_ARRAY
+        KILL_STEPS_ONLY
+        KILL_FULL_JOB
+        KILL_FED_REQUEUE
+
     cdef enum job_states:
         JOB_PENDING
         JOB_RUNNING

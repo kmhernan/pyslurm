@@ -127,12 +127,16 @@ cdef class archive_job:
             slurm.ListIterator jobIter = NULL
             int i = 0
             int jobNum = 0
-            int exit_code = slurm.NO_VAL
+            uint16_t exit_status
+            uint16_t term_sig
             slurm.List step_list = NULL
             slurm.ListIterator stepIter = NULL
             int j = 0 
             int stepNum = 0
             list J_list = [] 
+
+        exit_status = 0
+        term_sig = 0
 
         if self._JobList is not NULL:
             jobNum = slurm.slurm_list_count(self._JobList)
@@ -167,43 +171,75 @@ cdef class archive_job:
                     # stats
                     JobData[u"jobid"]    = job.jobid
                     JobData[u"jobname"]  = slurm.stringOrNone(job.jobname, '')
-                    JobData[u"exitcode"] = '' if job.state < JOB_COMPLETE \
-                        else slurm.int32orNone(job.exitcode)
 
-                    #JobData[u"exitcode"] = slurm.int32orNone(job.exitcode)
+                    if WIFSIGNALED(job.derived_ec):
+                        term_sig = WTERMSIG(job.derived_ec)
+                    else:
+                        term_sig = 0
+
+                    exit_status = WEXITSTATUS(job.derived_ec)
+                    JobData[u"derived_ec"] = str(exit_status) + ":" + str(term_sig)
+
+                    if WIFSIGNALED(job.exitcode):
+                        term_sig = WTERMSIG(job.exitcode)
+                    exit_status = WEXITSTATUS(job.exitcode)
+                    
+                    JobData[u"exitcode"] = str(exit_status) + ":" + str(term_sig) 
                     JobData[u"state"]    = get_job_state(job.state)
 
                     # Requested resources
-                    ## At this time I get some segfaults with the int64 types
-                    #JobData[u"req_cpus"] = slurm.int32orNone(job.req_cpus)
-                    #JobData[u"req_gres"] = slurm.stringOrNone(job.req_gres, '')
-                    #JobData[u"req_mem"]  = slurm.int64orNone(job.req_mem)
-                    #JobData[u"tres_alloc_str"] = slurm.stringOrNone(job.tres_alloc_str, '')
-                    #JobData[u"tres_req_str"]   = slurm.stringOrNone(job.tres_req_str, '')
+                    JobData[u"req_cpus"] = slurm.int32orNone(job.req_cpus)
+                    JobData[u"req_mem"]  = slurm.int64orNone(job.req_mem)
 
                     # Time info
                     JobData[u"elapsed"]   = slurm.stringOrNone(convSecs2time_str(job.elapsed), '')
                     JobData[u"submitted"] = self.__get_time_str(job.submit)
                     JobData[u"start"]     = self.__get_time_str(job.start)
                     JobData[u"end"]       = self.__get_time_str(job.end) 
-                    
-                    #slurm.slurm_make_time_str(&job.end, tmp_str, sz)
-                    #JobData[u"end"]       = tmp_str 
-                    #JobData[u"tot_cpu_sec"]     = slurm.int32orNone(job.tot_cpu_sec)
-                    #JobData[u"tot_cpu_usec"]    = slurm.int32orNone(job.tot_cpu_usec)
-                    #JobData[u"user_cpu_sec"]    = slurm.int32orNone(job.user_cpu_sec)
-                    #JobData[u"user_cpu_usec"]   = slurm.int32orNone(job.user_cpu_usec)
-                    #JobData[u"sys_cpu_sec"]     = slurm.int32orNone(job.sys_cpu_sec) 
-                    #JobData[u"sys_cpu_usec"]    = slurm.int32orNone(job.sys_cpu_usec)
-                    #JobData[u"vsize_max"]       = job.stats.vsize_max / 1024
-                    #JobData[u"vsize_ave"]       = slurm.int64orNone(<uint64_t>job.stats.vsize_ave)
-                    #JobData[u"vsize_ave"]       = job.stats.vsize_ave / 1024
-                    #JobData[u"consumed_energy"] = job.stats.consumed_energy
-                    #JobData[u"act_cpufreq"]     = job.stats.act_cpufreq
-                    #JobData[u"cpu_ave"]         = job.stats.cpu_ave
-                    #JobData[u"cpu_min"]         = job.stats.cpu_min
-                    #JobData[u"disk_read_ave"]   = job.stats.disk_read_ave
-                    #JobData[u"disk_write_ave"]  = job.stats.disk_write_ave
+
+                    # Usage
+                    JobData[u"total_cpu"]     = _elapsed_time(job.tot_cpu_sec, job.tot_cpu_usec)
+                    JobData[u"user_cpu"]      = _elapsed_time(job.user_cpu_sec, job.user_cpu_usec)
+                    JobData[u"system_cpu"]    = _elapsed_time(job.sys_cpu_sec, job.sys_cpu_usec)
+
+                    if job.stats.vsize_max != <uint64_t>slurm.NO_VAL64:
+                        JobData[u"vsize_max"] = job.stats.vsize_max
+                    else:
+                        JobData[u"vsize_max"] = None
+
+                    if <double>job.stats.vsize_ave != slurm.NO_VAL:
+                        JobData[u"vsize_ave"] = <double>job.stats.vsize_ave
+                    else:
+                        JobData[u"vsize_ave"] = None
+
+                    ##if job.stats.consumed_energy != NO_VAL_DOUBLE:
+                    ##    JobData[u"consumed_energy"] = job.stats.consumed_energy
+                    ##else:
+                    ##    JobData[u"consumed_energy"] = None 
+                    #
+                    if job.stats.act_cpufreq != slurm.NO_VAL:
+                        JobData[u"act_cpufreq"] = <double>job.stats.act_cpufreq / 1000
+                    else:
+                        JobData[u"act_cpufreq"] = None 
+
+                    if job.stats.cpu_ave != slurm.NO_VAL: 
+                        JobData[u"cpu_ave"] = _elapsed_time(<long>job.stats.cpu_ave, 0L)
+                    else:
+                        JobData[u"cpu_ave"] = None 
+
+                    if job.stats.cpu_min != slurm.NO_VAL:
+                        JobData[u"cpu_min"] = _elapsed_time(<long>job.stats.cpu_min, 0L)
+                    else:
+                        JobData[u"cpu_min"] = None
+
+                    JobData[u"disk_read_ave"] = None if job.stats.disk_read_ave == slurm.NO_VAL \
+                        else job.stats.disk_read_ave
+                    JobData[u"disk_write_ave"] = None if job.stats.disk_write_ave == slurm.NO_VAL \
+                        else job.stats.disk_write_ave
+
+                    #(uint64_t)job->elapsed
+                    #* (uint64_t)cpu_tres_rec_count;
+                    JobData[u"nodes"] = slurm.stringOrNone(job.nodes, '')
 
                 if name:
                     J_list.append(JobData)
@@ -382,3 +418,34 @@ cdef class BatchJob:
             self.response_msg[u'error_code'] = slurm_alloc_msg.error_code
 
         slurm.slurm_free_submit_response_response_msg( slurm_alloc_msg )
+
+cdef _elapsed_time(long secs, long usecs):
+    cdef:
+        long days, hours, minutes, seconds
+        long subsec = 0
+
+    if secs < 0 or secs == <long>slurm.NO_VAL:
+        return None 
+
+    while usecs >= 1E6:
+        secs += 1
+        usecs -= <long>1E6
+    
+    if (usecs > 0):
+        subsec = usecs / 1000
+
+    seconds =  secs % 60
+    minutes = (secs / 60)   % 60
+    hours   = (secs / 3600) % 24
+    days    =  secs / 86400
+
+    if days:
+        return u"%ld-%2.2ld:%2.2ld:%2.2ld" % (days, hours,
+                                              minutes, seconds)
+    elif hours:
+        return u"%2.2ld:%2.2ld:%2.2ld" % (hours,
+                                          minutes, seconds)
+    elif subsec:
+        return u"%2.2ld:%2.2ld.%3.3ld" % (minutes, seconds, subsec)
+    else:
+        return u"00:%2.2ld:%2.2ld" % (minutes, seconds)

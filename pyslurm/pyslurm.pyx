@@ -12,6 +12,7 @@ from libc.string cimport strlen, strcpy, memset, memcpy
 from libc.stdint cimport uint8_t, uint16_t, uint32_t
 from libc.stdint cimport int64_t, uint64_t
 from libc.stdlib cimport malloc, free
+from libc.signal cimport SIGKILL
 
 from cpython cimport bool
 
@@ -1460,6 +1461,13 @@ cpdef int slurm_signal_job_step(uint32_t JobID=0, uint32_t JobStep=0,
 
     return errCode
 
+
+def cancel_batch_job(jobid):
+    if isinstance(jobid, int) or isinstance(jobid, long):
+        rc = slurm_kill_job(<uint32_t>jobid, SIGKILL, KILL_FULL_JOB) 
+    else:
+        rc = slurm_kill_job2(jobid.encode("UTF-8"), SIGKILL, KILL_FULL_JOB) 
+    return rc
 
 cpdef int slurm_kill_job(uint32_t JobID=0, uint16_t Signal=0,
                          uint16_t BatchFlag=0) except? -1:

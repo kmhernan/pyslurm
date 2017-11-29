@@ -2,6 +2,12 @@
 # Expose SLURM enums/defines to Python Space
 #
 
+KILL_JOB_BATCH   = 0x0001 # signal batch shell only
+KILL_JOB_ARRAY   = 0x0002 # kill all elements of a job array
+KILL_STEPS_ONLY  = 0x0004 # Do not signal batch script
+KILL_FULL_JOB    = 0x0008 # Signal all steps, including batch script
+KILL_FED_REQUEUE = 0x0010 # Mark job as requeued when requeued
+
 JOB_PENDING = slurm.JOB_PENDING
 JOB_RUNNING = slurm.JOB_RUNNING
 JOB_SUSPENDED = slurm.JOB_SUSPENDED

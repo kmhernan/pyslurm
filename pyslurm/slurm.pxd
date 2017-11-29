@@ -2499,6 +2499,7 @@ cdef extern char *slurm_step_layout_type_name (task_dist_states_t task_dist)
 cdef extern char **environ
 cdef extern char **slurm_env_array_create()
 cdef extern void slurm_env_array_merge(char ***dest_array, const_char_pptr src_array)
+#cdef extern void env_array_merge_slurm(char ***dest_array, const_char_pptr src_array)
 cdef extern int slurm_env_array_overwrite(char ***array_ptr, const_char_ptr name, const_char_ptr value)
 cdef extern int slurm_env_array_overwrite_fmt(char ***array_ptr, const_char_ptr name, const_char_ptr value_fmt, ...)
 

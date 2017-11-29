@@ -13,6 +13,7 @@ from libc.stdlib cimport malloc, free
 from posix.unistd cimport getuid, getgid
 
 from cpython cimport bool
+
 cdef extern from 'stdlib.h':
     ctypedef long long size_t
 
@@ -35,7 +36,7 @@ cdef extern from "sys/wait.h" nogil:
 
 cdef extern from "<sys/resource.h>" nogil:
     enum: PRIO_PROCESS
-    int getpriority(int, id_t)
+    int getpriority(int, int)
 
 try:
     import __builtin__
@@ -301,8 +302,9 @@ cdef class BatchJob:
             slurm.submit_response_msg_t * slurm_alloc_msg
             int ret = -1 
             int apiError = -1
+            int retval
 
-        errno = 0
+        errno  = 0
         retval = 0
         retval = getpriority(PRIO_PROCESS, 0)
         if retval == -1:
@@ -327,7 +329,8 @@ cdef class BatchJob:
             mask = os.umask(0)
             _ = os.umask(mask)
             try:
-                os.environ["SLURM_UMASK"] = "0" + str((mask>>6)&07) + str((mask>>3)&07) + str(mask&07)
+                #os.environ["SLURM_UMASK"] = "0" + str((mask>>6)&07) + str((mask>>3)&07) + str(mask&07)
+                os.environ["SLURM_UMASK"] = "0%d%d%d" % ((mask>>6)&07, (mask>>3)&07, (mask&07))
             except:
                 raise ValueError("unable to set SLURM_UMASK in environment")
 
@@ -359,6 +362,7 @@ cdef class BatchJob:
 
         if requirements.get('cpus_per_task'):
             job_desc_msg.cpus_per_task = requirements[u'cpus_per_task']
+            job_desc_msg.pn_min_cpus = requirements[u'cpus_per_task']
             os.environ["SLURM_CPUS_PER_TASK"] = str(requirements[u'cpus_per_task'])
         if requirements.get('partition'):
             partition = requirements[u'partition'].encode("UTF-8", "replace")
@@ -374,12 +378,16 @@ cdef class BatchJob:
             job_desc_msg.group_id = requirements[u'group_id'] 
         else:
             job_desc_msg.group_id = getgid()
- 
-        if requirements.get('ntasks'):
-            job_desc_msg.num_tasks = requirements[u'ntasks'] 
-            os.environ["SLURM_NPROCS"] = str(requirements[u'ntasks'])
-            os.environ["SLURM_NTASKS"] = str(requirements[u'ntasks'])
 
+        # Not a universally safe thing, but we only submit single task/node jobs 
+        if requirements.get('ntasks') is not None:
+            job_desc_msg.num_tasks = requirements[u'ntasks'] 
+        else:
+            requirements[u'ntasks'] = 1 
+
+        os.environ["SLURM_NPROCS"] = str(requirements[u'ntasks'])
+        os.environ["SLURM_NTASKS"] = str(requirements[u'ntasks'])
+        job_desc_msg.min_cpus = requirements[u'ntasks'] * requirements[u'cpus_per_task'] 
         script = requirements[u'script'].encode("UTF-8", "replace")
         job_desc_msg.script = script
         job_desc_msg.immediate = 0
@@ -389,15 +397,25 @@ cdef class BatchJob:
         job_desc_msg.mail_type = 0
         job_desc_msg.begin_time = 0
         job_desc_msg.deadline = 0
-        job_desc_msg.environment = NULL
         job_desc_msg.std_in = "/dev/null"
         job_desc_msg.ckpt_dir = slurm.slurm_get_checkpoint_dir()
         job_desc_msg.ckpt_interval = <uint16_t>0
 
+        job_desc_msg.environment = NULL
         requirements[u"get_user_env_time"] = -1
         if not requirements.get("export_env"):
-            slurm.slurm_env_array_merge(&job_desc_msg.environment, <char **>slurm.environ)
-
+            slurm.slurm_env_array_merge(&job_desc_msg.environment, <slurm.const_char_pptr>slurm.environ)
+        elif requirements.get("export_env").upper() == "ALL":
+            slurm.slurm_env_array_merge(&job_desc_msg.environment, <slurm.const_char_pptr>slurm.environ)
+        elif requirements.get("export_end").upper() == "NONE": 
+            job_desc_msg.environment = slurm.slurm_env_array_create()
+            #slurm.env_array_merge_slurm(&job_desc_msg.environment, <slurm.const_char_pptr>slurm.environ)
+            requirements[u"get_user_env_time"] = 0
+        else:
+            # TODO
+            print "todo"
+            requirements[u"get_user_env_time"] = 0
+            
         if requirements[u"get_user_env_time"] >= 0:
             slurm.slurm_env_array_overwrite(&job_desc_msg.environment, "SLURM_GET_USER_ENV", "1")
 
@@ -409,6 +427,7 @@ cdef class BatchJob:
 
         # Submit job 
         ret = slurm.slurm_submit_batch_job(&job_desc_msg, &slurm_alloc_msg)
+
         if ret != 0:
             apiError = slurm.slurm_get_errno()
             raise ValueError(slurm.stringOrNone(slurm.slurm_strerror(apiError), ''), apiError)
